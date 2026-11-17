@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="384" viewBox="0 0 1120 384" role="img" aria-labelledby="title description">
+  <title id="title">wincal for Windows 11</title>
+  <desc id="description">CalDAV events in the Windows taskbar calendar, illustrated with date dots and a sample agenda.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#101b35"/>
+      <stop offset="1" stop-color="#23366b"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#6689f1" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#6689f1" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="calendar" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#f7faff"/>
+      <stop offset="1" stop-color="#eaf0fc"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="1120" height="384" rx="26"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1120" height="384" fill="url(#background)"/>
+    <ellipse cx="900" cy="194" rx="360" ry="276" fill="url(#glow)"/>
+    <g fill="none" stroke="#b3c5ff" opacity=".15">
+      <circle cx="1000" cy="193" r="226"/>
+      <circle cx="1000" cy="193" r="257"/>
+      <circle cx="1000" cy="193" r="287"/>
+    </g>
+    <g font-family="Segoe UI, Arial, sans-serif">
+      <g transform="translate(64 52)">
+        <rect width="52" height="52" rx="14" fill="#345bd0"/>
+        <path d="M14 18h24v21H14zM14 24h24M20 14v8m12-8v8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <g fill="#b6f4dc"><circle cx="22" cy="31" r="1.7"/><circle cx="28" cy="31" r="1.7"/><circle cx="34" cy="31" r="1.7"/></g>
+      </g>
+      <text x="135" y="83" fill="#c5d4ff" font-size="13" font-weight="700" letter-spacing="2.2">WINDOWS 11 · CALDAV</text>
+      <text x="61" y="197" fill="#fff" font-size="104" font-weight="700" letter-spacing="-5">wincal</text>
+      <text x="66" y="249" fill="#e2eaff" font-size="25" font-weight="600">Your events in the taskbar calendar</text>
+      <text x="67" y="305" fill="#aadfda" font-size="17">Dates with events are marked with a dot.</text>
+      <g transform="translate(685 26)">
+        <rect x="8" y="10" width="365" height="333" rx="20" fill="#0a142d" opacity=".42"/>
+        <rect width="365" height="333" rx="20" fill="url(#calendar)" stroke="#c3d0f1"/>
+        <text x="25" y="37" fill="#172541" font-size="16" font-weight="700">August 2026</text>
+        <path d="m302 33 5-5 5 5m15-5 5 5 5-5" fill="none" stroke="#435980" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/>
+        <g text-anchor="middle" fill="#455977" font-size="12" font-weight="600">
+          <text x="38" y="67">M</text><text x="86" y="67">T</text><text x="134" y="67">W</text><text x="182" y="67">T</text><text x="230" y="67">F</text><text x="278" y="67">S</text><text x="326" y="67">S</text>
+        </g>
+        <rect x="165" y="141" width="34" height="31" rx="9" fill="#3159c6"/>
+        <g text-anchor="middle" fill="#273a56" font-size="13">
+          <text y="91"><tspan x="278">1</tspan><tspan x="326">2</tspan></text>
+          <text y="114"><tspan x="38">3</tspan><tspan x="86">4</tspan><tspan x="134">5</tspan><tspan x="182">6</tspan><tspan x="230">7</tspan><tspan x="278">8</tspan><tspan x="326">9</tspan></text>
+          <text y="137"><tspan x="38">10</tspan><tspan x="86">11</tspan><tspan x="134">12</tspan><tspan x="182">13</tspan><tspan x="230">14</tspan><tspan x="278">15</tspan><tspan x="326">16</tspan></text>
+          <text y="159"><tspan x="38">17</tspan><tspan x="86">18</tspan><tspan x="134">19</tspan><tspan x="182" fill="#fff" font-weight="700">20</tspan><tspan x="230">21</tspan><tspan x="278">22</tspan><tspan x="326">23</tspan></text>
+          <text y="182"><tspan x="38">24</tspan><tspan x="86">25</tspan><tspan x="134">26</tspan><tspan x="182">27</tspan><tspan x="230">28</tspan><tspan x="278">29</tspan><tspan x="326">30</tspan></text>
+          <text x="38" y="204">31</text>
+        </g>
+        <g fill="#3159c6">
+          <circle cx="86" cy="120" r="2"/><circle cx="278" cy="143" r="2"/><circle cx="278" cy="188" r="2"/>
+        </g>
+        <circle cx="182" cy="165" r="2" fill="#b6f4dc"/>
+        <path d="M24 217h317" stroke="#bfcee6"/>
+        <text x="25" y="243" fill="#172541" font-size="15" font-weight="700">Events</text>
+        <rect x="25" y="255" width="315" height="28" rx="6" fill="#fff"/>
+        <rect x="25" y="290" width="315" height="28" rx="6" fill="#fff"/>
+        <path d="M31 262v14m0 21v14" stroke="#4166d4" stroke-width="3" stroke-linecap="round"/>
+        <text x="43" y="274" fill="#253957" font-size="13">Design review</text>
+        <text x="43" y="309" fill="#253957" font-size="13">Dinner with friends</text>
+      </g>
+    </g>
+  </g>
+</svg>
