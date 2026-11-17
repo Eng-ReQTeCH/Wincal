@@ -4,7 +4,7 @@
   <h1>wincal</h1>
   <p>See your CalDAV events in the Windows 11 taskbar calendar.</p>
 
-  <a href="https://github.com/Eng-ReQTeCH/Wincal/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Eng-ReQTeCH/Wincal?color=345bd0"></a>
+  <a href="https://github.com/Eng-ReQTeCH/Wincal/releases/latest"><img alt="Download the latest release" src="docs/release-badge.svg"></a>
   <a href="https://github.com/Eng-ReQTeCH/Wincal/actions/workflows/build.yml"><img alt="Windows build status" src="https://github.com/Eng-ReQTeCH/Wincal/actions/workflows/build.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-345bd0"></a>
   <a href="https://ko-fi.com/engmonzy"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Support-Ko--fi-8c2947?logo=kofi&amp;logoColor=white"></a>
