@@ -13,6 +13,7 @@
     <a href="#download">Download</a> ·
     <a href="#setup">Setup</a> ·
     <a href="#build-from-source">Build</a> ·
+    <a href="CHANGELOG.md">Changelog</a> ·
     <a href="#support-wincal">Support</a>
   </p>
 </div>
@@ -25,6 +26,8 @@
 | ARM64 | [Download ARM64 setup](https://github.com/Eng-ReQTeCH/Wincal/releases/latest/download/wincal-setup-arm64.exe) |
 
 The installers are unsigned. See the [latest release](https://github.com/Eng-ReQTeCH/Wincal/releases/latest) for SHA-256 checksums and release notes.
+
+**New in 0.4.4:** more accurate event dates, visible refresh errors when showing saved events, and fixes for calendar integration upgrades and reconnection. See the [changelog](CHANGELOG.md) for details.
 
 ## Features
 
