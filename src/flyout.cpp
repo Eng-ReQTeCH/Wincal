@@ -20,13 +20,22 @@ namespace {
 struct Session {
     FlyoutState* shared{};
     HANDLE controller{}, agendaMutex{};
+    LONG64 token{};
+    std::atomic_bool ownsClaim{};
     std::atomic_bool installed{}, detached{};
+    void ReleaseClaim() {
+        if (shared && ownsClaim.exchange(false)) ReleaseAttachmentClaim(*shared, token, static_cast<LONG>(GetCurrentProcessId()));
+    }
     ~Session() {
+        ReleaseClaim();
         if (shared) UnmapViewOfFile(shared);
         if (agendaMutex) CloseHandle(agendaMutex);
         if (controller) CloseHandle(controller);
     }
-    bool Active() const { return !detached && WaitForSingleObject(controller, 0) == WAIT_TIMEOUT; }
+    bool Active() const {
+        return !detached && (!token || ReadShared64(shared->attachmentOffer) == -token) &&
+            WaitForSingleObject(controller, 0) == WAIT_TIMEOUT;
+    }
     void Stage(LONG value) const {
         LONG current = ReadShared(shared->stage);
         while (current < value) {
@@ -150,6 +159,7 @@ struct Panel : std::enable_shared_from_this<Panel> {
 
     void Remove() {
         if (timer) { timer.Stop(); timer.Tick(tick); timer = nullptr; }
+        if (!session->Active()) session->ReleaseClaim();
         if (const auto control = calendar.get()) {
             if (marking) control.CalendarViewDayItemChanging(dayChanging);
             if (listening) control.SelectedDatesChanged(selected);
@@ -253,7 +263,7 @@ struct Panel : std::enable_shared_from_this<Panel> {
     }
 };
 
-UINT ProbeMessage() { static const UINT value = RegisterWindowMessageW(L"wincal.LiveFlyout.043"); return value; }
+UINT ProbeMessage() { static const UINT value = RegisterWindowMessageW(L"wincal.LiveFlyout.044"); return value; }
 std::atomic<std::shared_ptr<Session>> probing;
 
 LRESULT CALLBACK OnFlyoutThread(int code, WPARAM sent, LPARAM data) noexcept {
@@ -293,31 +303,43 @@ struct Tap : implements<Tap, IObjectWithSite> {
     std::shared_ptr<Session> session;
 
     HRESULT STDMETHODCALLTYPE SetSite(IUnknown* value) noexcept override {
-        if (!value) { if (session) session->detached = true; return S_OK; }
+        if (!value) {
+            if (session) { session->detached = true; session->ReleaseClaim(); }
+            session.reset();
+            site = nullptr;
+            return S_OK;
+        }
         if (session) return E_UNEXPECTED;
         try {
             site.copy_from(value);
             const auto diagnostics = site.as<IXamlDiagnostics>();
             BSTR data{};
             check_hresult(diagnostics->GetInitializationData(&data));
-            unsigned long long mapping{}, controller{}, agendaMutex{};
-            const bool parsed = data && swscanf_s(data, L"%llu %llu %llu", &mapping, &controller, &agendaMutex) == 3;
+            unsigned long long mapping{}, controller{}, agendaMutex{}, nonce0{}, nonce1{};
+            long long token{};
+            const bool parsed = data && swscanf_s(data, L"%llu %llu %llu %lld %llu %llu",
+                &mapping, &controller, &agendaMutex, &token, &nonce0, &nonce1) == 6;
             SysFreeString(data);
-            if (!parsed || !mapping || !controller || !agendaMutex) return E_INVALIDARG;
-            session = std::make_shared<Session>();
-            session->controller = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(controller));
-            session->agendaMutex = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(agendaMutex));
+            if (!parsed || !mapping || !controller || !agendaMutex || token <= 0) return E_INVALIDARG;
+            auto pending = std::make_shared<Session>();
             auto handle = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(mapping));
-            session->shared = static_cast<FlyoutState*>(MapViewOfFile(handle, FILE_MAP_WRITE, 0, 0, sizeof(FlyoutState)));
-            const DWORD error = GetLastError();
+            pending->shared = static_cast<FlyoutState*>(MapViewOfFile(handle, FILE_MAP_WRITE, 0, 0, sizeof(FlyoutState)));
+            if (!pending->shared) return HRESULT_FROM_WIN32(GetLastError());
+            // Until the claim succeeds, none of the supplied handles belong to
+            // this callback. A timed-out offer may already have been reclaimed.
+            if (!ClaimAttachment(*pending->shared, token, nonce0, nonce1)) return E_ABORT;
+            pending->token = token;
+            pending->ownsClaim = true;
+            pending->controller = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(controller));
+            pending->agendaMutex = reinterpret_cast<HANDLE>(static_cast<UINT_PTR>(agendaMutex));
             CloseHandle(handle);
-            if (!session->shared) return HRESULT_FROM_WIN32(error);
+            session = std::move(pending);
             HMODULE pinned{};
-            if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
-                reinterpret_cast<LPCWSTR>(&OnFlyoutThread), &pinned)) return HRESULT_FROM_WIN32(GetLastError());
+            check_bool(GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+                reinterpret_cast<LPCWSTR>(&OnFlyoutThread), &pinned));
+            InterlockedExchange(&session->shared->loadedPid, static_cast<LONG>(GetCurrentProcessId()));
             std::thread([state = session] {
-                InterlockedExchange(&state->shared->loadedPid, static_cast<LONG>(GetCurrentProcessId()));
-                state->Stage(2);
+                if (state->Active()) state->Stage(2);
                 while (state->Active()) {
                     if (!state->installed) {
                         const auto window = ReadFlyout(*state->shared);
@@ -336,9 +358,15 @@ struct Tap : implements<Tap, IObjectWithSite> {
                     }
                     WaitForSingleObject(state->controller, 750);
                 }
+                state->ReleaseClaim();
             }).detach();
             return S_OK;
-        } catch (...) { return to_hresult(); }
+        } catch (...) {
+            const auto error = to_hresult();
+            session.reset();
+            site = nullptr;
+            return error;
+        }
     }
     HRESULT STDMETHODCALLTYPE GetSite(REFIID iid, void** result) noexcept override {
         if (!result) return E_POINTER;

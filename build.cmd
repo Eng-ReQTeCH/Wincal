@@ -27,11 +27,14 @@ cl %CXX% /c /Fo"%OUT%\launcher.obj" src\launcher.cpp || exit /b 1
 cl %CXX% /c /Fo"%OUT%\flyout.obj" src\flyout.cpp || exit /b 1
 set "LIBS=user32.lib gdi32.lib ole32.lib oleaut32.lib runtimeobject.lib windowsapp.lib winhttp.lib crypt32.lib xmllite.lib shlwapi.lib shell32.lib"
 link /nologo /subsystem:windows /out:"%OUT%\Win11CalendarNative.exe" "%OUT%\launcher.obj" "%OUT%\calendar.obj" "%OUT%\cache.obj" %LIBS% || exit /b 1
-link /nologo /dll /def:src\Flyout.def /out:"%OUT%\CalendarFlyout-043.dll" "%OUT%\flyout.obj" %LIBS% || exit /b 1
+link /nologo /dll /def:src\Flyout.def /out:"%OUT%\CalendarFlyout-044.dll" "%OUT%\flyout.obj" %LIBS% || exit /b 1
 cl %CXX% /Fe"%OUT%\calendar_test.exe" /Fo"%OUT%\calendar_test.obj" tests\calendar_test.cpp "%OUT%\calendar.obj" "%OUT%\cache.obj" /link %LIBS% || exit /b 1
 if /i "%ARCH%"=="x64" "%OUT%\calendar_test.exe" || exit /b 1
+cl %CXX% /Fe"%OUT%\attachment_test.exe" /Fo"%OUT%\attachment_test.obj" tests\attachment_test.cpp /link %LIBS% || exit /b 1
+if /i "%ARCH%"=="x64" "%OUT%\attachment_test.exe" || exit /b 1
+cl %CXX% /Fe"%OUT%\flyout_test.exe" /Fo"%OUT%\flyout_test.obj" tests\flyout_test.cpp "%OUT%\calendar.obj" "%OUT%\cache.obj" /link %LIBS% /MANIFEST:EMBED /MANIFESTINPUT:tests\flyout_test.manifest || exit /b 1
 set "CSC=%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-set "RESOURCES=/resource:%OUT%\Win11CalendarNative.exe,Win11CalendarNative.exe /resource:%OUT%\CalendarFlyout-043.dll,CalendarFlyout-043.dll /resource:installer\Uninstall.cmd,Uninstall.cmd"
+set "RESOURCES=/resource:%OUT%\Win11CalendarNative.exe,Win11CalendarNative.exe /resource:%OUT%\CalendarFlyout-044.dll,CalendarFlyout-044.dll /resource:installer\Uninstall.cmd,Uninstall.cmd"
 set "SETUP_SOURCES=installer\Setup.cs installer\SetupForm.cs"
 set "SETUP=build\wincal-setup-%ARCH%.exe"
 if not "%~2"=="" set "SETUP=%~2"

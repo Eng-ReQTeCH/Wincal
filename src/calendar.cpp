@@ -68,10 +68,100 @@ std::wstring Unescape(std::wstring_view value) {
 
 struct Event {
     std::wstring start, end, title;
+    std::wstring duration;
+    bool hasDuration{};
     bool cancelled{};
 };
 
-void ReadEvents(std::wstring_view ics, std::vector<Event>& events) {
+// Expanded CalDAV results contain DATE, floating DATE-TIME, or UTC DATE-TIME.
+// Keep UTC values in UTC until duration arithmetic is complete: adding elapsed
+// hours after conversion to local time is incorrect across a DST transition.
+bool ReadStamp(std::wstring_view value, SYSTEMTIME& time) {
+    if (value.size() != 8 && value.size() != 15 && value.size() != 16) return false;
+    if (value.size() > 8 && (value[8] != L'T' || (value.size() == 16 && value[15] != L'Z'))) return false;
+    for (size_t i = 0; i < value.size(); ++i)
+        if (i != 8 && i != 15 && (value[i] < L'0' || value[i] > L'9')) return false;
+    const auto number = [&](size_t offset, size_t length) {
+        WORD result = 0;
+        for (size_t i = offset; i < offset + length; ++i) result = result * 10 + value[i] - L'0';
+        return result;
+    };
+    time = {};
+    time.wYear = number(0, 4);
+    time.wMonth = number(4, 2);
+    time.wDay = number(6, 2);
+    if (value.size() > 8) {
+        time.wHour = number(9, 2);
+        time.wMinute = number(11, 2);
+        // RFC 5545 permits treating an unsupported leap second as second 59.
+        time.wSecond = number(13, 2);
+        if (time.wSecond == 60) time.wSecond = 59;
+    }
+    FILETIME file{};
+    return time.wYear <= 9999 && SystemTimeToFileTime(&time, &file);
+}
+
+bool DurationEnd(const Event& event, const SYSTEMTIME& start, std::wstring& end) {
+    auto value = std::wstring_view(event.duration);
+    if (!value.empty() && value.front() == L'+') value.remove_prefix(1);
+    if (value.empty() || value.front() != L'P') return false;
+    value.remove_prefix(1);
+    // Bound arithmetic before multiplication, even for maliciously long values.
+    constexpr ULONGLONG MaxSeconds = 315537897599ULL; // Less than 10,000 years.
+    ULONGLONG seconds = 0;
+    int previous = 0;
+    bool inTime = false, timeComponent = false;
+    while (!value.empty()) {
+        if (value.front() == L'T') {
+            if (inTime || event.start.size() == 8) return false;
+            inTime = true;
+            value.remove_prefix(1);
+            continue;
+        }
+        size_t digits = 0;
+        ULONGLONG count = 0;
+        while (digits < value.size() && value[digits] >= L'0' && value[digits] <= L'9') {
+            const auto digit = value[digits++] - L'0';
+            if (count > (MaxSeconds - digit) / 10) return false;
+            count = count * 10 + digit;
+        }
+        if (!digits || digits == value.size()) return false;
+        const wchar_t unit = value[digits];
+        value.remove_prefix(digits + 1);
+        ULONGLONG scale = 0;
+        int order = 0;
+        if (!inTime && unit == L'W' && !previous && value.empty()) { scale = 604800; order = 1; }
+        if (!inTime && unit == L'D') { scale = 86400; order = 2; }
+        if (inTime && unit == L'H') { scale = 3600; order = 3; }
+        if (inTime && unit == L'M') { scale = 60; order = 4; }
+        if (inTime && unit == L'S') { scale = 1; order = 5; }
+        if (!scale || order <= previous || (previous == 3 && order == 5) || count > (MaxSeconds - seconds) / scale) return false;
+        seconds += count * scale;
+        previous = order;
+        timeComponent |= inTime;
+    }
+    if (!seconds || (inTime && !timeComponent)) return false;
+    FILETIME file{};
+    if (!SystemTimeToFileTime(&start, &file)) return false;
+    ULARGE_INTEGER ticks{};
+    ticks.LowPart = file.dwLowDateTime;
+    ticks.HighPart = file.dwHighDateTime;
+    // Both operands are bounded well below the ULONGLONG limit.
+    ticks.QuadPart += seconds * 10000000ULL;
+    file = {ticks.LowPart, ticks.HighPart};
+    SYSTEMTIME finish{};
+    if (!FileTimeToSystemTime(&file, &finish) || finish.wYear > 9999) return false;
+    end = DatePart(finish);
+    if (event.start.size() > 8) {
+        wchar_t time[16];
+        swprintf_s(time, L"T%02u%02u%02u", finish.wHour, finish.wMinute, finish.wSecond);
+        end += time;
+        if (event.start.back() == L'Z') end += L'Z';
+    }
+    return true;
+}
+
+bool ReadEvents(std::wstring_view ics, std::vector<Event>& events) {
     std::vector<std::wstring> lines;
     while (!ics.empty()) {
         const auto newline = ics.find(L'\n');
@@ -85,28 +175,55 @@ void ReadEvents(std::wstring_view ics, std::vector<Event>& events) {
         }
     }
     Event event;
-    unsigned level = 0;
+    std::vector<std::wstring> components;
+    bool calendarSeen = false;
     for (const auto& line : lines) {
-        const auto colon = line.find(L':');
-        if (colon == line.npos) continue;
+        if (line.empty()) continue;
+        size_t colon = 0;
+        bool quoted = false;
+        for (; colon < line.size(); ++colon) {
+            if (line[colon] == L'"') quoted = !quoted;
+            if (!quoted && line[colon] == L':') break;
+        }
+        if (colon == line.size()) return false;
         auto name = line.substr(0, line.find_first_of(L";:"));
         CharUpperBuffW(name.data(), static_cast<DWORD>(name.size()));
-        const auto value = line.substr(colon + 1);
-        if (name == L"BEGIN" && _wcsicmp(value.c_str(), L"VEVENT") == 0 && !level) {
-            event = {};
-            level = 1;
-        } else if (level && name == L"BEGIN") {
-            ++level;
-        } else if (level && name == L"END") {
-            if (!--level && _wcsicmp(value.c_str(), L"VEVENT") == 0 && !event.start.empty() && !event.cancelled)
+        auto value = line.substr(colon + 1);
+        if (name == L"BEGIN" || name == L"END" || name == L"DTSTART" || name == L"DTEND" || name == L"DURATION")
+            CharUpperBuffW(value.data(), static_cast<DWORD>(value.size()));
+        if (name == L"BEGIN") {
+            if (components.empty()) {
+                if (value != L"VCALENDAR" || calendarSeen) return false;
+                calendarSeen = true;
+            } else if (value == L"VCALENDAR" || (value == L"VEVENT" && components.back() != L"VCALENDAR")) return false;
+            if (value == L"VEVENT") event = {};
+            components.push_back(value);
+        } else if (name == L"END") {
+            if (components.empty() || components.back() != value) return false;
+            if (value == L"VEVENT" && !event.cancelled) {
+                SYSTEMTIME start{}, end{};
+                if (!ReadStamp(event.start, start)) return false;
+                if (event.hasDuration && (!event.end.empty() || !DurationEnd(event, start, event.end))) return false;
+                if (!event.end.empty() && (!ReadStamp(event.end, end) || event.end.size() != event.start.size() ||
+                    event.end <= event.start)) return false;
+                for (auto* stamp : {&event.start, &event.end})
+                    if (stamp->size() > 8 && stamp->substr(13, 2) == L"60") stamp->replace(13, 2, L"59");
+                const bool hasEnd = !event.end.empty();
+                event.start = LocalStamp(event.start);
+                event.end = LocalStamp(event.end);
+                if (event.start.empty() || (hasEnd && event.end.empty())) return false;
                 events.push_back(std::move(event));
-        } else if (level == 1) {
-            if (name == L"DTSTART") event.start = LocalStamp(value);
-            if (name == L"DTEND") event.end = LocalStamp(value);
+            }
+            components.pop_back();
+        } else if (components.size() == 2 && components.back() == L"VEVENT") {
+            if (name == L"DTSTART") event.start = value;
+            if (name == L"DTEND") event.end = value;
+            if (name == L"DURATION") { event.duration = value; event.hasDuration = true; }
             if (name == L"SUMMARY") event.title = Unescape(value);
             if (name == L"STATUS") event.cancelled = _wcsicmp(value.c_str(), L"CANCELLED") == 0;
         }
     }
+    return calendarSeen && components.empty();
 }
 
 std::wstring NetworkError() {
@@ -205,35 +322,83 @@ CalendarSnapshot ParseCalendar(const std::string& response, CalendarRange range)
     if (!OpenXml(response, xml)) return {{}, L"Couldn't read the CalDAV response."};
 
     std::vector<Event> events;
-    std::wstring calendarData;
+    std::wstring calendarData, davStatus;
     bool multistatus = false;
-    bool inCalendar = false;
+    bool inCalendar = false, inResponse = false, inPropstat = false, inProp = false, inStatus = false;
+    bool responseHasData = false, propertyHasData = false, propertySucceeded = false;
     XmlNodeType node{};
     HRESULT status;
     while ((status = xml->Read(&node)) == S_OK) {
         if (node == XmlNodeType_Element || node == XmlNodeType_EndElement) {
             const wchar_t *name{}, *ns{};
-            xml->GetLocalName(&name, nullptr);
-            xml->GetNamespaceUri(&ns, nullptr);
-            if (!name || !ns) continue;
+            UINT depth{};
+            if (FAILED(xml->GetLocalName(&name, nullptr)) || FAILED(xml->GetNamespaceUri(&ns, nullptr)) ||
+                FAILED(xml->GetDepth(&depth)) || !name || !ns) return {{}, L"Couldn't read the CalDAV response."};
+            const bool opening = node == XmlNodeType_Element;
+            // XmlLite reports end-tag depth before popping the element, one
+            // level deeper than its corresponding start tag.
+            if (!opening && depth) --depth;
             if (node == XmlNodeType_Element && !multistatus) {
-                if (std::wstring_view(ns) != L"DAV:" || std::wstring_view(name) != L"multistatus")
+                if (depth != 0 || std::wstring_view(ns) != L"DAV:" || std::wstring_view(name) != L"multistatus")
                     return {{}, L"The server returned an invalid CalDAV response."};
                 multistatus = true;
             }
-            if (std::wstring_view(ns) == L"urn:ietf:params:xml:ns:caldav" && std::wstring_view(name) == L"calendar-data") {
-                if (node == XmlNodeType_Element) {
-                    calendarData.clear();
-                    inCalendar = !xml->IsEmptyElement();
-                } else {
-                    ReadEvents(calendarData, events);
-                    inCalendar = false;
+            if (std::wstring_view(ns) == L"DAV:") {
+                const auto tag = std::wstring_view(name);
+                if (tag == L"response" && depth == 1) {
+                    if (opening) {
+                        if (xml->IsEmptyElement()) return {{}, L"The CalDAV response omitted calendar data."};
+                        inResponse = true;
+                        responseHasData = false;
+                    } else {
+                        if (!responseHasData) return {{}, L"The CalDAV response omitted calendar data."};
+                        inResponse = false;
+                    }
+                } else if (inResponse && tag == L"propstat" && depth == 2) {
+                    if (opening) {
+                        if (xml->IsEmptyElement()) return {{}, L"The CalDAV response omitted property status."};
+                        inPropstat = true;
+                        propertyHasData = propertySucceeded = false;
+                    } else {
+                        if (!propertySucceeded) return {{}, L"The CalDAV response omitted property status."};
+                        responseHasData |= propertyHasData;
+                        inPropstat = false;
+                    }
+                } else if (inPropstat && tag == L"prop" && depth == 3) {
+                    inProp = opening && !xml->IsEmptyElement();
+                } else if (inResponse && tag == L"status" && (depth == 2 || (inPropstat && depth == 3))) {
+                    if (opening) {
+                        if (xml->IsEmptyElement()) return {{}, L"The CalDAV response omitted resource status."};
+                        inStatus = true;
+                        davStatus.clear();
+                    } else {
+                        wchar_t protocol[16]{};
+                        unsigned code{};
+                        if (swscanf_s(davStatus.c_str(), L"%15ls %u", protocol, static_cast<unsigned>(_countof(protocol)), &code) != 2 ||
+                            std::wstring_view(protocol).substr(0, 5) != L"HTTP/" || code < 200 || code >= 300)
+                            return {{}, L"The CalDAV server could not return all calendar data."};
+                        if (inPropstat) propertySucceeded = true;
+                        inStatus = false;
+                    }
                 }
             }
-        } else if (inCalendar && (node == XmlNodeType_Text || node == XmlNodeType_CDATA || node == XmlNodeType_Whitespace)) {
+            if (std::wstring_view(ns) == L"urn:ietf:params:xml:ns:caldav" && std::wstring_view(name) == L"calendar-data") {
+                if (!inProp || depth != 4) return {{}, L"The server returned an invalid calendar property."};
+                if (opening) {
+                    if (xml->IsEmptyElement()) return {{}, L"The CalDAV response omitted calendar data."};
+                    calendarData.clear();
+                    inCalendar = true;
+                } else {
+                    if (!ReadEvents(calendarData, events)) return {{}, L"The calendar contains an invalid event date or duration."};
+                    inCalendar = false;
+                    propertyHasData = true;
+                }
+            }
+        } else if ((inCalendar || inStatus) && (node == XmlNodeType_Text || node == XmlNodeType_CDATA || node == XmlNodeType_Whitespace)) {
             const wchar_t* value{};
             UINT length{};
-            if (SUCCEEDED(xml->GetValue(&value, &length))) calendarData.append(value, length);
+            if (FAILED(xml->GetValue(&value, &length))) return {{}, L"Couldn't read the CalDAV response."};
+            (inCalendar ? calendarData : davStatus).append(value, length);
         }
     }
     if (FAILED(status) || !multistatus) return {{}, L"The server returned an invalid CalDAV response."};

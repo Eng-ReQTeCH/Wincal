@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 // Shared by the launcher and the flyout DLL. Every field is a value or an
@@ -34,11 +35,18 @@ struct AgendaIndex {
         return entry != end && entry->day == day ? entry : nullptr;
     }
 
-    std::wstring_view TextForDay(LONG day, const wchar_t* text) const {
-        if (const auto entry = Find(day)) return {text + entry->offset, entry->length};
-        if (home.Contains(day) || extra.Contains(day)) return L"No events on this date.";
-        const auto& coverage = homeQueryFirst <= day && day < homeQueryEnd ? home : extra;
-        if (*coverage.error) return coverage.error;
+    std::wstring TextForDay(LONG day, const wchar_t* text) const {
+        const auto& coverage = (homeQueryFirst <= day && day < homeQueryEnd) || home.Contains(day) ? home : extra;
+        const bool cached = home.Contains(day) || extra.Contains(day);
+        std::wstring status;
+        if (*coverage.error) {
+            if (!cached) return coverage.error;
+            status = L"Refresh failed: ";
+            status += coverage.error;
+            status += L"\nShowing saved calendar data.\n\n";
+        }
+        if (const auto entry = Find(day)) return status + std::wstring(text + entry->offset, entry->length);
+        if (cached) return status + L"No events on this date.";
         return L"Loading calendar events…";
     }
 };

@@ -20,14 +20,14 @@ internal static partial class Setup
     // Keep the storage and registry identity used by previous installers.
     internal const string InstallId = "Win11CalendarFix";
     internal const string Launcher = "Win11CalendarNative.exe";
-    internal const string FlyoutModule = "CalendarFlyout-043.dll";
+    internal const string FlyoutModule = "CalendarFlyout-044.dll";
     const string ShellPackage = "Microsoft.Windows.ShellExperienceHost_cw5n1h2txyewy";
     internal const string Tap = "CalendarTap.dll";
-    internal const string Version = "0.4.3";
+    internal const string Version = "0.4.4";
     static readonly string[] LegacyLaunchers = { "Win11CalendarFix.exe", "Win11CalendarFix-016.exe", "Win11CalendarFix-017.exe", "Win11CalendarAgenda.exe" };
     static readonly string[] LegacyFiles = {
         Tap, "CalendarTap-016.dll", "CalendarTap-017.dll", "CalendarFlyout-030.dll", "CalendarFlyout-031.dll",
-        "CalendarFlyout-032.dll", "CalendarFlyout-040.dll", "CalendarFlyout-041.dll", "CalendarFlyout-042.dll"
+        "CalendarFlyout-032.dll", "CalendarFlyout-040.dll", "CalendarFlyout-041.dll", "CalendarFlyout-042.dll", "CalendarFlyout-043.dll"
     };
     internal const string SettingsFile = "settings.bin";
     internal const string UninstallDriver = "Uninstall.cmd";

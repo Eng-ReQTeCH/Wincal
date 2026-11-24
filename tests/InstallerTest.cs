@@ -173,6 +173,28 @@ internal static class InstallerTest
                 using (FileStream oldTap = File.Open(tap, FileMode.Open, FileAccess.Read, FileShare.Read))
                     Setup.StageUpdate(root, registry);
                 CheckShellAccess(module, settings);
+                // Simulate an upgrade while the shell still holds the previous
+                // version of the DLL. A new filename must carry the new code.
+                const string oldModuleName = "CalendarFlyout-043.dll";
+                string oldModule = Path.Combine(root, oldModuleName);
+                File.WriteAllText(oldModule, "previous version fixture");
+                File.Delete(module);
+                using (FileStream lockedOldModule = File.Open(oldModule, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    Setup.StageUpdate(root, registry);
+                    Require(File.Exists(oldModule), "The update should defer removal of a locked previous module.");
+                    Require(Setup.FlyoutModule != oldModuleName, "A changed flyout must use a new versioned filename.");
+                    using (Stream expected = typeof(Setup).Assembly.GetManifestResourceStream(Setup.FlyoutModule))
+                    using (var bytes = new MemoryStream())
+                    {
+                        expected.CopyTo(bytes);
+                        Require(Convert.ToBase64String(File.ReadAllBytes(module)) == Convert.ToBase64String(bytes.ToArray()),
+                            "The upgrade did not install the embedded current flyout module.");
+                    }
+                    CheckShellAccess(module, settings);
+                }
+                Setup.StageUpdate(root, registry);
+                Require(!File.Exists(oldModule), "A subsequent update should remove the unlocked previous module.");
                 Require(Convert.ToBase64String(File.ReadAllBytes(settings)) == saved, "The update touched the saved settings.");
                 Require(File.ReadAllText(cache) == "existing cache fixture", "The update touched the saved event cache.");
                 using (RegistryKey entry = Registry.CurrentUser.OpenSubKey(installedAppKey))
@@ -182,6 +204,7 @@ internal static class InstallerTest
                         "The startup entry did not select the updated launcher.");
             }
             File.WriteAllText(Path.Combine(root, "keep.txt"), "keep");
+            File.WriteAllText(tap, "locked legacy module fixture");
             Func<bool> undo = registryTest ? (Func<bool>)(() => Setup.Undo(root, registry)) : (() => Setup.RemoveFiles(root));
             using (FileStream locked = File.Open(tap, FileMode.Open, FileAccess.Read, FileShare.Read))
             {

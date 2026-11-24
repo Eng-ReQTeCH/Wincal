@@ -1,5 +1,6 @@
 #include "cache.h"
 #include "flyout.h"
+#include "attachment.h"
 #include <xamlom.h>
 #include <shellapi.h>
 #include <filesystem>
@@ -60,35 +61,6 @@ BOOL CALLBACK ProbeMonitor(HMONITOR monitor, HDC, LPRECT, LPARAM value) {
     if (!IsNotificationWindow(window)) return TRUE;
     *reinterpret_cast<HWND*>(value) = window;
     return FALSE;
-}
-
-HRESULT Attach(decltype(&InitializeXamlDiagnosticsEx) initialize, DWORD pid, HANDLE view, HANDLE agendaMutex,
-    const fs::path& dll, unsigned index) {
-    Handle process(OpenProcess(PROCESS_DUP_HANDLE, FALSE, pid));
-    if (!process) return HRESULT_FROM_WIN32(GetLastError());
-    HANDLE remoteView{}, remoteController{}, remoteAgendaMutex{};
-    const auto release = [&](HANDLE handle) {
-        if (handle) DuplicateHandle(process.get(), handle, nullptr, nullptr, 0, FALSE, DUPLICATE_CLOSE_SOURCE);
-    };
-    if (!DuplicateHandle(GetCurrentProcess(), view, process.get(), &remoteView, FILE_MAP_WRITE, FALSE, 0) ||
-        !DuplicateHandle(GetCurrentProcess(), GetCurrentProcess(), process.get(), &remoteController, SYNCHRONIZE, FALSE, 0) ||
-        !DuplicateHandle(GetCurrentProcess(), agendaMutex, process.get(), &remoteAgendaMutex, SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE, 0)) {
-        const DWORD error = GetLastError();
-        release(remoteView);
-        release(remoteController);
-        return HRESULT_FROM_WIN32(error);
-    }
-    auto data = std::to_wstring(reinterpret_cast<UINT_PTR>(remoteView)) + L" " +
-        std::to_wstring(reinterpret_cast<UINT_PTR>(remoteController)) + L" " +
-        std::to_wstring(reinterpret_cast<UINT_PTR>(remoteAgendaMutex));
-    auto endpoint = L"VisualDiagConnection" + std::to_wstring(index);
-    const HRESULT result = initialize(endpoint.c_str(), pid, nullptr, dll.c_str(), FlyoutTap, data.c_str());
-    if (result == HRESULT_FROM_WIN32(ERROR_NOT_FOUND) || result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
-        release(remoteView);
-        release(remoteController);
-        release(remoteAgendaMutex);
-    }
-    return result;
 }
 
 constexpr ULONGLONG RefreshIntervalMs = 60000;
@@ -206,8 +178,8 @@ private:
     bool wasOpen{}, refreshHome{}, refreshExtra{}, requestIsHome{}, dirty{true}, saveNeeded{};
 };
 
-constexpr wchar_t BuildStatus[] = L"wincal 0.4.3.";
-constexpr wchar_t FlyoutModule[] = L"CalendarFlyout-043.dll";
+constexpr wchar_t BuildStatus[] = L"wincal 0.4.4.";
+constexpr wchar_t FlyoutModule[] = L"CalendarFlyout-044.dll";
 
 class FlyoutAttachment {
 public:
@@ -215,10 +187,15 @@ public:
         : initialize(initialize), dll(std::move(dll)) {}
 
     void Tick(HWND window, FlyoutState& state, HANDLE mapping, HANDLE agendaMutex, std::wofstream& status) {
+        const auto now = GetTickCount64();
+        attempt.Poll(now);
         if (window) {
             DWORD pid{};
             GetWindowThreadProcessId(window, &pid);
             if (pid != previousPid) {
+                attempt.Reset();
+                InterlockedExchange64(&state.attachmentOffer, 0);
+                InterlockedExchange(&state.loadedPid, 0);
                 previousPid = pid;
                 endpoint = 1;
                 nextAttempt = 0;
@@ -226,9 +203,8 @@ public:
                 InterlockedExchange(&state.error, 0);
                 InterlockedExchange(&state.stage, 1);
             }
-            const auto now = GetTickCount64();
-            if (pid && ReadShared(state.loadedPid) != static_cast<LONG>(pid) && now >= nextAttempt) {
-                const auto result = Attach(initialize, pid, mapping, agendaMutex, dll, endpoint);
+            if (pid && ReadShared64(state.attachmentOffer) >= 0 && !attempt.Pending() && now >= nextAttempt) {
+                const auto result = attempt.Begin(initialize, pid, state, mapping, agendaMutex, dll.c_str(), endpoint, ++token, now);
                 if (result != HRESULT_FROM_WIN32(ERROR_NOT_FOUND) && result != HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
                     status << L"Endpoint " << endpoint << L": 0x" << std::hex << static_cast<unsigned long>(result) << std::dec << L'\n';
                 endpoint = endpoint == 32 ? 1 : endpoint + 1;
@@ -255,6 +231,8 @@ private:
     unsigned endpoint = 1;
     ULONGLONG nextAttempt{};
     LONG lastStage{}, lastError{};
+    LONG64 token{};
+    AttachmentAttempt attempt;
 };
 
 int Watch(const fs::path& root) {
@@ -284,6 +262,11 @@ int Watch(const fs::path& root) {
     auto view = static_cast<FlyoutState*>(MapViewOfFile(mapping.get(), FILE_MAP_WRITE, 0, 0, sizeof(FlyoutState)));
     if (!view) return 1;
     struct Unmap { FlyoutState* view; ~Unmap() { UnmapViewOfFile(view); } } unmap{view};
+    GUID nonce{};
+    if (FAILED(CoCreateGuid(&nonce))) return 1;
+    view->protocol = FlyoutProtocol;
+    static_assert(sizeof(nonce) == sizeof(view->nonce));
+    memcpy(view->nonce, &nonce, sizeof(nonce));
     const auto xaml = LoadLibraryExW(L"Windows.UI.Xaml.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!xaml) {
         status << L"Windows XAML runtime is unavailable.\n";

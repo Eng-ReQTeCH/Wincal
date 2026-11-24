@@ -63,14 +63,15 @@ From the repository root, run the commands for the architectures you need.
 .\build.cmd arm64
 ```
 
-Setup executables go to `build\wincal-setup-x64.exe` and `build\wincal-setup-arm64.exe`. The x64 build runs the parser, cache, and installer smoke tests. To run the remaining checks on x64, use the following commands.
+Setup executables go to `build\wincal-setup-x64.exe` and `build\wincal-setup-arm64.exe`. The x64 build runs the parser, cache, attachment ownership, and installer smoke tests. To run the remaining checks on x64, use the following commands.
 
 ```powershell
 .\build\x64\installer_test.exe --registry
 .\build\x64\installer_test.exe --http
+.\build\x64\flyout_test.exe
 ```
 
-The registry test uses a temporary per-user key. The HTTP test uses a temporary loopback CalDAV server. [GitHub Actions](.github/workflows/build.yml) builds both installers and runs the x64 tests.
+The registry test uses a temporary per-user key and covers upgrades with a locked previous DLL. The HTTP test uses a temporary loopback CalDAV server. The native flyout test requires a Windows desktop with the system XAML runtime; it hosts the production panel in a disposable hidden window and checks selection, concurrent publication, cleanup, and reattachment without changing the installed app or the shell. [GitHub Actions](.github/workflows/build.yml) builds both installers and runs the x64 build tests plus registry and HTTP checks.
 
 ## Source layout
 
