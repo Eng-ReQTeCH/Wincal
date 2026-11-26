@@ -111,6 +111,55 @@ internal static class InstallerTest
         }
         finally { listener.Stop(); }
         Console.WriteLine("Plain HTTP CalDAV connection and Basic authentication passed.");
+        CheckInstantHttp(launcher, settings);
+    }
+
+    static void CheckInstantHttp(string launcher, string settings)
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            Setup.WriteSettings(settings, "http://127.0.0.1:" + port + "/point-events", "", "", false);
+            var accept = listener.AcceptTcpClientAsync();
+            using (Process process = Process.Start(new ProcessStartInfo(launcher, "--check " + Setup.Quote(settings))
+            { UseShellExecute = false, RedirectStandardError = true }))
+            {
+                try
+                {
+                    Require(accept.Wait(10000), "The point-event query did not reach the loopback server.");
+                    using (TcpClient client = accept.Result)
+                    using (NetworkStream stream = client.GetStream())
+                    using (var reader = new StreamReader(stream, Encoding.ASCII))
+                    {
+                        stream.ReadTimeout = 4000;
+                        Require(reader.ReadLine() == "REPORT /point-events/ HTTP/1.1", "Expected a point-event calendar REPORT.");
+                        int length = 0;
+                        string header;
+                        while (!string.IsNullOrEmpty(header = reader.ReadLine()))
+                            if (header.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                                length = int.Parse(header.Substring("Content-Length:".Length), CultureInfo.InvariantCulture);
+                        Require(length > 0 && length < 4096, "Expected a bounded point-event query body.");
+                        Require(reader.ReadBlock(new char[length], 0, length) == length, "The point-event query was incomplete.");
+                        string stamp = DateTime.Today.AddHours(12).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+                        string body = "<d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">" +
+                            "<d:response><d:propstat><d:prop><c:calendar-data><![CDATA[BEGIN:VCALENDAR\r\n" +
+                            "BEGIN:VEVENT\r\nDTSTART:" + stamp + "\r\nDTEND:" + stamp +
+                            "\r\nSUMMARY:Instantaneous fixture event\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n]]>" +
+                            "</c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>";
+                        byte[] response = Encoding.ASCII.GetBytes("HTTP/1.1 207 Multi-Status\r\nContent-Length: " + body.Length +
+                            "\r\nContent-Type: application/xml\r\nConnection: close\r\n\r\n" + body);
+                        stream.Write(response, 0, response.Length);
+                    }
+                    Require(process.WaitForExit(10000) && process.ExitCode == 0,
+                        "An expanded zero-length event must not make the launcher report a refresh error.");
+                }
+                finally { if (!process.HasExited) { process.Kill(); process.WaitForExit(); } }
+            }
+        }
+        finally { listener.Stop(); }
+        Console.WriteLine("Expanded zero-length timed event HTTP integration passed.");
     }
 
     static string CalendarQueryRange(DateTime day)
@@ -175,7 +224,7 @@ internal static class InstallerTest
                 CheckShellAccess(module, settings);
                 // Simulate an upgrade while the shell still holds the previous
                 // version of the DLL. A new filename must carry the new code.
-                const string oldModuleName = "CalendarFlyout-043.dll";
+                const string oldModuleName = "CalendarFlyout-044.dll";
                 string oldModule = Path.Combine(root, oldModuleName);
                 File.WriteAllText(oldModule, "previous version fixture");
                 File.Delete(module);

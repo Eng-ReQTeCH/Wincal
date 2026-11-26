@@ -204,8 +204,12 @@ bool ReadEvents(std::wstring_view ics, std::vector<Event>& events) {
                 SYSTEMTIME start{}, end{};
                 if (!ReadStamp(event.start, start)) return false;
                 if (event.hasDuration && (!event.end.empty() || !DurationEnd(event, start, event.end))) return false;
+                // CalDAV expansion can represent an instantaneous timed event
+                // with an explicit DTEND equal to DTSTART. Index it on its
+                // start date, just like a timed event without an end. DATE
+                // events still require an exclusive end after their start.
                 if (!event.end.empty() && (!ReadStamp(event.end, end) || event.end.size() != event.start.size() ||
-                    event.end <= event.start)) return false;
+                    event.end < event.start || (event.start.size() == 8 && event.end == event.start))) return false;
                 for (auto* stamp : {&event.start, &event.end})
                     if (stamp->size() > 8 && stamp->substr(13, 2) == L"60") stamp->replace(13, 2, L"59");
                 const bool hasEnd = !event.end.empty();

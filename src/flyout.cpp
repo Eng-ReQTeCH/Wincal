@@ -263,7 +263,7 @@ struct Panel : std::enable_shared_from_this<Panel> {
     }
 };
 
-UINT ProbeMessage() { static const UINT value = RegisterWindowMessageW(L"wincal.LiveFlyout.044"); return value; }
+UINT ProbeMessage() { static const UINT value = RegisterWindowMessageW(L"wincal.LiveFlyout.045"); return value; }
 std::atomic<std::shared_ptr<Session>> probing;
 
 LRESULT CALLBACK OnFlyoutThread(int code, WPARAM sent, LPARAM data) noexcept {

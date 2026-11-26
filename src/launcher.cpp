@@ -178,8 +178,8 @@ private:
     bool wasOpen{}, refreshHome{}, refreshExtra{}, requestIsHome{}, dirty{true}, saveNeeded{};
 };
 
-constexpr wchar_t BuildStatus[] = L"wincal 0.4.4.";
-constexpr wchar_t FlyoutModule[] = L"CalendarFlyout-044.dll";
+constexpr wchar_t BuildStatus[] = L"wincal 0.4.5.";
+constexpr wchar_t FlyoutModule[] = L"CalendarFlyout-045.dll";
 
 class FlyoutAttachment {
 public:

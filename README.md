@@ -27,7 +27,7 @@
 
 The installers are unsigned. See the [latest release](https://github.com/Eng-ReQTeCH/Wincal/releases/latest) for SHA-256 checksums and release notes.
 
-**New in 0.4.4:** more accurate event dates, visible refresh errors when showing saved events, and fixes for calendar integration upgrades and reconnection. See the [changelog](CHANGELOG.md) for details.
+**New in 0.4.5:** fixes the recurring “invalid event date or duration” refresh error caused by zero-length timed events. See the [changelog](CHANGELOG.md) for details.
 
 ## Features
 

@@ -60,6 +60,40 @@ END:VCALENDAR]]></c:calendar-data></d:prop><d:status>HTTP/1.1 200 OK</d:status><
             "<d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>";
     };
     const CalendarRange durationRange{DayFromKey(20261116), DayFromKey(20261125)};
+    for (const auto& stamp : {"20261116T000000", "20261117T000000", "20261117T110000", "20261117T235959",
+        "20261115T235959", "20261125T000000", "20261116T000000Z", "20261117T220000Z", "20261117T235959Z"}) {
+        const auto instantaneous = ParseCalendar(eventResponse(std::string("DTSTART:") + stamp + "\nDTEND:" + stamp), durationRange);
+        const auto implicitEnd = ParseCalendar(eventResponse(std::string("DTSTART:") + stamp), durationRange);
+        check(instantaneous.error.empty() && implicitEnd.error.empty() && instantaneous.days == implicitEnd.days,
+            "An explicit zero-length timed event must occupy the same dates as an event without DTEND, including query boundaries");
+    }
+    const auto pointAtMidnight = ParseCalendar(eventResponse("DTSTART:20261117T000000\nDTEND:20261117T000000"), durationRange);
+    check(pointAtMidnight.error.empty() && pointAtMidnight.days.size() == 1 && pointAtMidnight.days.contains(20261117),
+        "A zero-length event at midnight must appear only on its start date");
+    const auto pointBeforeWindow = ParseCalendar(eventResponse("DTSTART:20261115T235959\nDTEND:20261115T235959"), durationRange);
+    const auto pointAfterWindow = ParseCalendar(eventResponse("DTSTART:20261125T000000\nDTEND:20261125T000000"), durationRange);
+    check(pointBeforeWindow.error.empty() && pointBeforeWindow.days.empty() && pointAfterWindow.error.empty() && pointAfterWindow.days.empty(),
+        "Zero-length events outside the requested window must not bleed into it");
+    auto mixedResource = eventResponse("DTSTART:20261117T100000\nDTEND:20261117T110000", "SUMMARY:Normal event");
+    mixedResource.insert(mixedResource.find("END:VCALENDAR"),
+        "BEGIN:VEVENT\nDTSTART:20261117T000000\nDTEND:20261117T000000\nSUMMARY:Midnight point\nEND:VEVENT\n"
+        "BEGIN:VEVENT\nDTSTART:20261117T120000Z\nDTEND:20261117T120000Z\nSUMMARY:UTC point\nEND:VEVENT\n");
+    const auto mixedEvents = ParseCalendar(mixedResource, durationRange);
+    size_t mixedCount = 0;
+    for (const auto& [date, titles] : mixedEvents.days) mixedCount += titles.size();
+    check(mixedEvents.error.empty() && mixedCount == 3, "Point events must not reject other events in the same calendar resource");
+    auto multipleResources = eventResponse("DTSTART:20261117T100000\nDTEND:20261117T110000");
+    const auto pointResource = eventResponse("DTSTART:20261117T120000Z\nDTEND:20261117T120000Z");
+    multipleResources.insert(multipleResources.rfind("</d:multistatus>"),
+        pointResource.substr(prefix.size(), pointResource.size() - prefix.size() - std::string("</d:multistatus>").size()));
+    const auto resourceEvents = ParseCalendar(multipleResources, durationRange);
+    size_t resourceCount = 0;
+    for (const auto& [date, titles] : resourceEvents.days) resourceCount += titles.size();
+    check(resourceEvents.error.empty() && resourceCount == 2, "An instantaneous event in one resource must not fail the entire CalDAV refresh");
+    check(!ParseCalendar(eventResponse("DTSTART:20261117T120000\nDTEND:20261117T115959"), durationRange).error.empty(),
+        "Timed events ending before their start must still be rejected");
+    check(!ParseCalendar(eventResponse("DTSTART;VALUE=DATE:20261117\nDTEND;VALUE=DATE:20261117"), durationRange).error.empty(),
+        "All-day events must retain their exclusive end-date validation");
     const auto durationDays = ParseCalendar(eventResponse("DTSTART;VALUE=DATE:20261117\nDURATION:P3D"), durationRange);
     check(durationDays.error.empty() && durationDays.days.size() == 3 &&
         durationDays.days.contains(20261117) && durationDays.days.contains(20261118) && durationDays.days.contains(20261119),

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.5] - 2026-11-26
+
+### Fixed
+
+- Fixed a 0.4.4 regression where an expanded timed event with identical `DTSTART` and `DTEND` made the entire calendar refresh fail with “The calendar contains an invalid event date or duration.”
+- Treat these instantaneous timed events like timed events without an end: display them only on their start date, with normal UTC-to-local conversion and date-window filtering.
+- Preserve validation for reversed intervals, malformed timestamps, and invalid all-day end dates; genuine refresh failures still retain saved events and remain visible.
+
+### Validation
+
+- Added regression coverage for UTC and floating-time point events, midnight and query-window boundaries, mixed events within one resource, and multiple CalDAV resources.
+- Added a loopback HTTP test exercising the production launcher with an expanded point-event response.
+- Verified that the previously failing full-cache query succeeds against the affected live connection, without logging credentials or event contents. The x64 regression suite, native XAML lifecycle tests, HTTP integration, locked-module upgrade/uninstall checks, and ARM64 cross-build also passed.
+
+### Upgrade notes
+
+Run the 0.4.5 installer for your PC's architecture and choose **Keep settings**. The saved connection and event cache carry over. The installer uses a new versioned flyout module and can defer removal of a locked 0.4.4 module.
+
 ## [0.4.4] - 2026-11-24
 
 ### Fixed
@@ -31,5 +49,6 @@ The installers remain unsigned. SHA-256 checksums are available with the release
 - Open cached dates immediately and retain access to saved events offline.
 - Provide x64 and native ARM64 installers, with saved settings and event-cache migration from Win11CalendarFix.
 
+[0.4.5]: https://github.com/Eng-ReQTeCH/Wincal/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Eng-ReQTeCH/Wincal/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Eng-ReQTeCH/Wincal/releases/tag/v0.4.3
